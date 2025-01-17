@@ -64,6 +64,29 @@ static volatile bool shutdown_requested = false;
 // }
 
 
+static void PrintBufs(void)
+{
+	int			i;
+
+	for (i = 0; i < NBuffers; ++i)
+	{
+		BufferDesc *buf = GetBufferDescriptor(i);
+		// Buffer		b = BufferDescriptorGetBuffer(buf);
+
+		{
+			/* theoretically we should lock the bufhdr here */
+			elog(LOG,
+				 "[%02d] (freeNext=%d, rel=%s, "
+				 "blockNum=%u, state=0x%x",
+				 i, buf->freeNext,
+				 relpathperm(BufTagGetRelFileLocator(&buf->tag),
+							 BufTagGetForkNum(&buf->tag)),
+				 buf->tag.blockNum, (uint32) buf->state.value);
+		}
+	}
+}
+
+
 static void
 register_http_server_worker(void)
 {
@@ -112,8 +135,9 @@ start_http_server(Datum main_arg)
     BackgroundWorkerUnblockSignals();
 
     /* Run your server loop. On each request, call export_buffers_via_http() */
-    printf("pg_bufhttp server");
-    printf("pg_bufhttp server: line 2!");
+    printf("pg_bufhttp server\n\n");
+
+    PrintBufs();
     
 }
 
