@@ -13,6 +13,7 @@ PG_MODULE_MAGIC;
 /* Forward declarations */
 void _PG_init(void);
 void _PG_fini(void);
+PGDLLEXPORT void start_http_server(Datum main_arg);
 
 /* 
  * Optional: you might want to define these as extern if they're not 
@@ -28,39 +29,39 @@ void _PG_fini(void);
 static volatile bool shutdown_requested = false;
 
 
-static void
-export_buffers_via_http()
-{
-    int i;
+// static void
+// export_buffers_via_http()
+// {
+//     int i;
     
-    /* 
-     * Potentially: Acquire lock. For instance, 
-     * "LWLockAcquire(BufFreelistLock, LW_SHARED);" or some 
-     * other relevant lock that ensures stable reading. 
-     * But be extremely cautious: the specifics can differ by PG version.
-     */
+//     /* 
+//      * Potentially: Acquire lock. For instance, 
+//      * "LWLockAcquire(BufFreelistLock, LW_SHARED);" or some 
+//      * other relevant lock that ensures stable reading. 
+//      * But be extremely cautious: the specifics can differ by PG version.
+//      */
     
-    for (i = 0; i < NBuffers; i++)
-    {
-        BufferDesc *desc = GetBufferDescriptor(i);
-        /* Or: desc = &BufferDescriptors[i]; in some versions */
+//     for (i = 0; i < NBuffers; i++)
+//     {
+//         BufferDesc *desc = GetBufferDescriptor(i);
+//         /* Or: desc = &BufferDescriptors[i]; in some versions */
 
-        /* Read metadata safely. For example: */
-        BufferTag tag = desc->tag;
-        pg_atomic_uint32 state = desc->state;
+//         /* Read metadata safely. For example: */
+//         BufferTag tag = desc->tag;
+//         pg_atomic_uint32 state = desc->state;
 
-        /* 
-         * If you want the actual page data, you'd do something like:
-         *    Buffer buf = BufferDescriptorGetBuffer(desc);
-         *    Page page = BufferGetPage(buf);
-         * But be mindful of concurrency and correctness.
-         */
+//         /* 
+//          * If you want the actual page data, you'd do something like:
+//          *    Buffer buf = BufferDescriptorGetBuffer(desc);
+//          *    Page page = BufferGetPage(buf);
+//          * But be mindful of concurrency and correctness.
+//          */
         
-        /* Accumulate this in a JSON buffer, or textual output, etc. */
-    }
+//         /* Accumulate this in a JSON buffer, or textual output, etc. */
+//     }
     
-    /* LWLockRelease(BufFreelistLock); if you acquired it */
-}
+//     /* LWLockRelease(BufFreelistLock); if you acquired it */
+// }
 
 
 static void
@@ -103,7 +104,7 @@ register_http_server_worker(void)
 
 }
 
-static void
+void
 start_http_server(Datum main_arg)
 {
     /* This is the entry point for your worker. Set up the server socket, etc. */
@@ -114,8 +115,6 @@ start_http_server(Datum main_arg)
     printf("pg_bufhttp server");
     printf("pg_bufhttp server: line 2!");
     
-    /* when done, exit */
-    proc_exit(0);
 }
 
 
