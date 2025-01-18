@@ -327,6 +327,7 @@ handle_client(int client_fd)
             written = snprintf(response, response_size,
                                 "HTTP/1.1 200 OK\r\n"
                                 "Content-Type: application/json\r\n"
+                                "Access-Control-Allow-Origin: *\r\n"
                                 "Content-Length: %d\r\n"
                                 "Connection: close\r\n"
                                 "\r\n"
