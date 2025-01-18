@@ -4440,6 +4440,8 @@ PrintBufferDescs(void)
 							INVALID_PROC_NUMBER, BufTagGetForkNum(&buf->tag)),
 			 buf->tag.blockNum, 
 			 BUF_STATE_GET_REFCOUNT(buf_state), GetPrivateRefCount(b));
+			 
+		UnlockBufHdr(buf, buf_state);
 	}
 }
 #endif
@@ -4467,6 +4469,8 @@ PrintPinnedBufs(void)
 							 BufTagGetForkNum(&buf->tag)),
 				 buf->tag.blockNum, 
 				 BUF_STATE_GET_REFCOUNT(buf_state), GetPrivateRefCount(b));
+
+			UnlockBufHdr(buf, buf_state);
 		}
 	}
 }
