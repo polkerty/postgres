@@ -397,6 +397,26 @@ export_buffers_as_json(void)
     {
 
         BufferDesc *desc = GetBufferDescriptor(i);
+        BufferTag tag = desc->tag;
+
+        /*
+        
+        typedef struct buftag
+{
+	Oid			spcOid;			
+	Oid			dbOid;		
+	RelFileNumber relNumber;	
+	ForkNumber	forkNum;		
+	BlockNumber blockNum;	
+} BufferTag;
+
+        */
+
+       int spcOid = tag.spcOid;
+       int dbOid = tag.dbOid;
+       int relNumber = tag.relNumber;
+       int forkNumber = tag.forkNum;
+       int blockNumber = tag.blockNum;
 
         /* Read metadata safely. For example: */
 		uint32 buf_state = desc->state.value;
@@ -430,7 +450,14 @@ export_buffers_as_json(void)
             "    \"justDirtied\": %s,\n"
             "    \"pinCountWaiter\": %s,\n"
             "    \"checkpointNeeded\": %s,\n"
-            "    \"permanent\": %s\n"
+            "    \"permanent\": %s,\n"
+            "    \"tag\": {\n"
+            "         \"spcOid\": %d,\n"
+            "         \"dbOid\": %d,\n"
+            "         \"relNumber\": %d,\n"
+            "         \"forkNumber\": %d,\n"
+            "         \"blockNumber\": %d\n"
+            "    }\n"
             "  }",
             refcount,
             desc->buf_id,
@@ -443,7 +470,12 @@ export_buffers_as_json(void)
             (justDirtied ? "true" : "false"),
             (pinCountWaiter ? "true" : "false"),
             (checkpointNeeded ? "true" : "false"),
-            (permanent ? "true" : "false")
+            (permanent ? "true" : "false"),
+            spcOid,
+            dbOid,
+            relNumber,
+            forkNumber,
+            blockNumber
         );
 
 		// elog(LOG,
