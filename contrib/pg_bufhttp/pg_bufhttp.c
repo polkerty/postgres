@@ -8,6 +8,18 @@
 
 #include "postmaster/bgworker.h"
 
+#include "storage/ipc.h"
+#include "storage/proc.h"
+#include "miscadmin.h"
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+#include <stdio.h>
+
 PG_MODULE_MAGIC;
 
 /* Forward declarations */
@@ -64,27 +76,27 @@ static volatile bool shutdown_requested = false;
 // }
 
 
-static void PrintBufs(void)
-{
-	int			i;
+// static void PrintBufs(void)
+// {
+// 	int			i;
 
-	for (i = 0; i < NBuffers; ++i)
-	{
-		BufferDesc *buf = GetBufferDescriptor(i);
-		// Buffer		b = BufferDescriptorGetBuffer(buf);
+// 	for (i = 0; i < NBuffers; ++i)
+// 	{
+// 		BufferDesc *buf = GetBufferDescriptor(i);
+// 		// Buffer		b = BufferDescriptorGetBuffer(buf);
 
-		{
-			/* theoretically we should lock the bufhdr here */
-			elog(LOG,
-				 "[%02d] (freeNext=%d, rel=%s, "
-				 "blockNum=%u, state=0x%x",
-				 i, buf->freeNext,
-				 relpathperm(BufTagGetRelFileLocator(&buf->tag),
-							 BufTagGetForkNum(&buf->tag)),
-				 buf->tag.blockNum, (uint32) buf->state.value);
-		}
-	}
-}
+// 		{
+// 			/* theoretically we should lock the bufhdr here */
+// 			elog(LOG,
+// 				 "[%02d] (freeNext=%d, rel=%s, "
+// 				 "blockNum=%u, state=0x%x",
+// 				 i, buf->freeNext,
+// 				 relpathperm(BufTagGetRelFileLocator(&buf->tag),
+// 							 BufTagGetForkNum(&buf->tag)),
+// 				 buf->tag.blockNum, (uint32) buf->state.value);
+// 		}
+// 	}
+// }
 
 
 static void
@@ -128,21 +140,6 @@ register_http_server_worker(void)
 }
 
 void
-start_http_server(Datum main_arg)
-{
-    /* This is the entry point for your worker. Set up the server socket, etc. */
-    // pqsignal(SIGTERM, MyProcSignalHandler);  /* handle termination signals */
-    BackgroundWorkerUnblockSignals();
-
-    /* Run your server loop. On each request, call export_buffers_via_http() */
-    printf("pg_bufhttp server\n\n");
-
-    PrintBufs();
-    
-}
-
-
-void
 _PG_init(void)
 {
     /* 
@@ -161,4 +158,206 @@ _PG_fini(void)
     /* Clean up anything on unload */
     shutdown_requested = true;
     /* join your thread, etc. */
+}
+
+
+/* The server */
+
+/* Forward declarations */
+static void handle_client(int client_fd);
+static char *export_buffers_as_json(void);
+
+void
+start_http_server(Datum main_arg)
+{
+    struct sockaddr_in server_addr;
+    int server_fd;
+    int optval = 1;
+
+    /*
+     * If you want to handle SIGTERM or other signals gracefully,
+     * you can set up signal handlers here.
+     *
+     * e.g., pqsignal(SIGTERM, MyProcSignalHandler);
+     *       BackgroundWorkerUnblockSignals();
+     */
+    BackgroundWorkerUnblockSignals();
+
+    elog(LOG, "pg_bufhttp: starting minimal HTTP server on port 6565");
+
+    /* Create a TCP socket */
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        elog(ERROR, "pg_bufhttp: socket() failed");
+        return;
+    }
+
+    /* Reuse address/port to avoid "address already in use" */
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
+                   &optval, sizeof(optval)) < 0)
+    {
+        elog(ERROR, "pg_bufhttp: setsockopt() failed");
+        close(server_fd);
+        return;
+    }
+
+    /* Bind to port 6565 on any interface (0.0.0.0) */
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port        = htons(6565);
+
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+    {
+        elog(ERROR, "pg_bufhttp: bind() failed on port 6565");
+        close(server_fd);
+        return;
+    }
+
+    /* Start listening */
+    if (listen(server_fd, 10) < 0)
+    {
+        elog(ERROR, "pg_bufhttp: listen() failed");
+        close(server_fd);
+        return;
+    }
+
+    elog(LOG, "pg_bufhttp: server is now listening on port 6565");
+
+    /*
+     * Main accept loop. In a real system, you'd want to:
+     *  - handle signals and exit gracefully
+     *  - possibly spawn threads or processes to handle connections
+     */
+    for (;;)
+    {
+        struct sockaddr_in client_addr;
+        socklen_t addr_len = sizeof(client_addr);
+        int client_fd;
+
+        /* Accept a new client */
+        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
+        if (client_fd < 0)
+        {
+            /* In a real server, check errno for EINTR, etc. */
+            elog(WARNING, "pg_bufhttp: accept() failed");
+            continue;
+        }
+
+        /* Handle client synchronously in this example */
+        handle_client(client_fd);
+
+        close(client_fd);
+
+        /* 
+         * Optionally check for a termination signal or similar 
+         * so the worker can exit gracefully. For instance:
+         *
+         * if (got_sigterm)
+         * {
+         *     elog(LOG, "pg_bufhttp: received SIGTERM, shutting down");
+         *     break;
+         * }
+         */
+    }
+
+    close(server_fd);
+    elog(LOG, "pg_bufhttp: server exiting");
+}
+
+/*
+ * A simple function to read the client's HTTP request and send a response.
+ */
+static void
+handle_client(int client_fd)
+{
+    char buffer[1024];
+    ssize_t bytes_read;
+    char method[16], path[256];
+
+    /* Clear buffers */
+    memset(buffer, 0, sizeof(buffer));
+    memset(method, 0, sizeof(method));
+    memset(path, 0, sizeof(path));
+
+    /*
+     * Read the request. This example just reads up to 1023 bytes once.
+     * A real server might need a loop to read the entire request or headers.
+     */
+    bytes_read = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+    if (bytes_read <= 0)
+    {
+        return;
+    }
+
+    /* Parse the first line of the request to extract method and path */
+    /* This is a naive parse. Real parsing is more complicated. */
+    sscanf(buffer, "%15s %255s", method, path);
+
+    /* We only handle GET in this toy example */
+    if (strcmp(method, "GET") == 0)
+    {
+        if (strcmp(path, "/bufs") == 0)
+        {
+            /* Return JSON with buffer info (dummy for this example). */
+            char *json = export_buffers_as_json();
+            char response[2048];
+            int content_length = strlen(json);
+
+            /* Construct a minimal 200 OK response */
+            snprintf(response, sizeof(response),
+                     "HTTP/1.1 200 OK\r\n"
+                     "Content-Type: application/json\r\n"
+                     "Content-Length: %d\r\n"
+                     "Connection: close\r\n"
+                     "\r\n"
+                     "%s",
+                     content_length, json);
+
+            send(client_fd, response, strlen(response), 0);
+        }
+        else
+        {
+            /* 404 Not Found */
+            const char *not_found =
+                "HTTP/1.1 404 Not Found\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 13\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "404 Not Found\n";
+            send(client_fd, not_found, strlen(not_found), 0);
+        }
+    }
+    else
+    {
+        /* 405 Method Not Allowed */
+        const char *method_not_allowed =
+            "HTTP/1.1 405 Method Not Allowed\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 23\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "405 Method Not Allowed\n";
+        send(client_fd, method_not_allowed, strlen(method_not_allowed), 0);
+    }
+}
+
+/*
+ * For demonstration, returns a static JSON string. You could replace
+ * this with calls to your actual data-export function (e.g. the
+ * "PrintBufs()" or something that serializes real buffer info to JSON).
+ */
+static char *
+export_buffers_as_json(void)
+{
+
+    int BUFF_SIZE = 300;
+    char *result = malloc(BUFF_SIZE); 
+    
+    // Use snprintf to safely write into the buffer
+    snprintf(result, BUFF_SIZE, "{\"total buffer count\": \"%d\"}", NBuffers);
+    
+
+    return  result;
 }
