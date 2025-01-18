@@ -167,6 +167,9 @@ _PG_fini(void)
 static void handle_client(int client_fd);
 static char *export_buffers_as_json(void);
 
+static int BUFF_SIZE = 10000000;
+
+
 void
 start_http_server(Datum main_arg)
 {
@@ -274,6 +277,10 @@ handle_client(int client_fd)
     char buffer[1024];
     ssize_t bytes_read;
     char method[16], path[256];
+    int content_length;
+    size_t response_size;
+    char *response;
+    int written;
 
     /* Clear buffers */
     memset(buffer, 0, sizeof(buffer));
@@ -299,22 +306,44 @@ handle_client(int client_fd)
     {
         if (strcmp(path, "/bufs") == 0)
         {
-            /* Return JSON with buffer info (dummy for this example). */
             char *json = export_buffers_as_json();
-            char response[2048];
-            int content_length = strlen(json);
+            if (!json) {
+                fprintf(stderr, "Error: Failed to generate JSON\n");
+                return;
+            }
 
-            /* Construct a minimal 200 OK response */
-            snprintf(response, sizeof(response),
-                     "HTTP/1.1 200 OK\r\n"
-                     "Content-Type: application/json\r\n"
-                     "Content-Length: %d\r\n"
-                     "Connection: close\r\n"
-                     "\r\n"
-                     "%s",
-                     content_length, json);
+            content_length = strlen(json);
+            
+            // Allocate response buffer dynamically based on content size
+            response_size = content_length + 200; // Extra space for headers
+            response = malloc(response_size);
+            if (!response) {
+                fprintf(stderr, "Error: Memory allocation failed\n");
+                free(json);
+                return;
+            }
 
-            send(client_fd, response, strlen(response), 0);
+            // Construct the response safely
+            written = snprintf(response, response_size,
+                                "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/json\r\n"
+                                "Content-Length: %d\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "%s",
+                                content_length, json);
+            
+            if (written < 0 || written >= response_size) {
+                fprintf(stderr, "Error: Response formatting failed\n");
+                free(response);
+                free(json);
+                return;
+            }
+
+            send(client_fd, response, written, 0);
+
+            free(response);
+            free(json);
         }
         else
         {
@@ -352,12 +381,92 @@ static char *
 export_buffers_as_json(void)
 {
 
-    int BUFF_SIZE = 300;
-    char *result = malloc(BUFF_SIZE); 
-    
+
+    char *jsonBuffer = malloc(BUFF_SIZE); 
+    int i;
+
+    int offset = 0;
+    offset += sprintf(jsonBuffer + offset, "[\n");
+
+    elog(LOG,
+    	 "NBuffers %d",
+    	 NBuffers);
+
+    for (i = 0; i < NBuffers; i++)
+    {
+
+        BufferDesc *desc = GetBufferDescriptor(i);
+
+        /* Read metadata safely. For example: */
+		uint32 buf_state = desc->state.value;
+        int refcount = BUF_STATE_GET_REFCOUNT(buf_state);
+
+        int locked = buf_state & BM_LOCKED;
+        int dirty = buf_state & BM_DIRTY;
+        int valid = buf_state & BM_VALID;
+        int tagValid = buf_state & BM_TAG_VALID;
+        int ioInProgress = buf_state & BM_IO_IN_PROGRESS;
+        int ioError = buf_state & BM_IO_ERROR;
+        int justDirtied = buf_state & BM_JUST_DIRTIED;
+        int pinCountWaiter = buf_state & BM_PIN_COUNT_WAITER;
+        int checkpointNeeded = buf_state & BM_CHECKPOINT_NEEDED;
+        int permanent = buf_state & BM_PERMANENT;
+
+        if (i > 0) {
+            offset += sprintf(jsonBuffer + offset, ",\n");
+        }
+
+        offset += sprintf(jsonBuffer + offset,
+            "  {\n"
+            "    \"refcount\": %d,\n"
+            "    \"id\": \"%d\",\n"
+            "    \"locked\": %s\n"
+            "    \"dirty\": %s\n"
+            "    \"valid\": %s\n"
+            "    \"tagValid\": %s\n"
+            "    \"ioInProgress\": %s\n"
+            "    \"ioError\": %s\n"
+            "    \"justDirtied\": %s\n"
+            "    \"pinCountWaiter\": %s\n"
+            "    \"checkpointNeeded\": %s\n"
+            "    \"permanent\": %s\n"
+            "  }",
+            refcount,
+            desc->buf_id,
+            (locked ? "true" : "false"),
+            (dirty ? "true" : "false"),
+            (valid ? "true" : "false"),
+            (tagValid ? "true" : "false"),
+            (ioInProgress ? "true" : "false"),
+            (ioError ? "true" : "false"),
+            (justDirtied ? "true" : "false"),
+            (pinCountWaiter ? "true" : "false"),
+            (checkpointNeeded ? "true" : "false"),
+            (permanent ? "true" : "false")
+        );
+
+		// elog(LOG,
+		// 	 "[%02d] (freeNext=%d, rel=%s, "
+		// 	 "blockNum=%u, refcount=%u %d)",
+		// 	 i, buf->freeNext,
+		// 	 relpathbackend(BufTagGetRelFileLocator(&buf->tag),
+		// 					INVALID_PROC_NUMBER, BufTagGetForkNum(&buf->tag)),
+		// 	 buf->tag.blockNum, 
+		// 	 BUF_STATE_GET_REFCOUNT(buf_state), GetPrivateRefCount(b));
+        /* 
+         * If you want the actual page data, you'd do something like:
+         *    Buffer buf = BufferDescriptorGetBuffer(desc);
+         *    Page page = BufferGetPage(buf);
+         * But be mindful of concurrency and correctness.
+         */
+        
+    }
+
+    offset += sprintf(jsonBuffer + offset, "\n]\n");
+
     // Use snprintf to safely write into the buffer
-    snprintf(result, BUFF_SIZE, "{\"total buffer count\": \"%d\"}", NBuffers);
+    // snprintf(result, BUFF_SIZE, "{\"total buffer count\": \"%d\"}", NBuffers);
     
 
-    return  result;
+    return  jsonBuffer;
 }
