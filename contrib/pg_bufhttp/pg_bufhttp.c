@@ -36,69 +36,7 @@ PGDLLEXPORT void start_http_server(Datum main_arg);
  * extern int NBuffers;
  */
 
-/* 
- * We'll keep a simple global for controlling the server thread. 
- */
 static volatile bool shutdown_requested = false;
-
-
-// static void
-// export_buffers_via_http()
-// {
-//     int i;
-    
-//     /* 
-//      * Potentially: Acquire lock. For instance, 
-//      * "LWLockAcquire(BufFreelistLock, LW_SHARED);" or some 
-//      * other relevant lock that ensures stable reading. 
-//      * But be extremely cautious: the specifics can differ by PG version.
-//      */
-    
-//     for (i = 0; i < NBuffers; i++)
-//     {
-//         BufferDesc *desc = GetBufferDescriptor(i);
-//         /* Or: desc = &BufferDescriptors[i]; in some versions */
-
-//         /* Read metadata safely. For example: */
-//         BufferTag tag = desc->tag;
-//         pg_atomic_uint32 state = desc->state;
-
-//         /* 
-//          * If you want the actual page data, you'd do something like:
-//          *    Buffer buf = BufferDescriptorGetBuffer(desc);
-//          *    Page page = BufferGetPage(buf);
-//          * But be mindful of concurrency and correctness.
-//          */
-        
-//         /* Accumulate this in a JSON buffer, or textual output, etc. */
-//     }
-    
-//     /* LWLockRelease(BufFreelistLock); if you acquired it */
-// }
-
-
-// static void PrintBufs(void)
-// {
-// 	int			i;
-
-// 	for (i = 0; i < NBuffers; ++i)
-// 	{
-// 		BufferDesc *buf = GetBufferDescriptor(i);
-// 		// Buffer		b = BufferDescriptorGetBuffer(buf);
-
-// 		{
-// 			/* theoretically we should lock the bufhdr here */
-// 			elog(LOG,
-// 				 "[%02d] (freeNext=%d, rel=%s, "
-// 				 "blockNum=%u, state=0x%x",
-// 				 i, buf->freeNext,
-// 				 relpathperm(BufTagGetRelFileLocator(&buf->tag),
-// 							 BufTagGetForkNum(&buf->tag)),
-// 				 buf->tag.blockNum, (uint32) buf->state.value);
-// 		}
-// 	}
-// }
-
 
 static void
 register_http_server_worker(void)
@@ -156,9 +94,7 @@ _PG_init(void)
 void
 _PG_fini(void)
 {
-    /* Clean up anything on unload */
     shutdown_requested = true;
-    /* join your thread, etc. */
 }
 
 
@@ -288,10 +224,6 @@ handle_client(int client_fd)
     memset(method, 0, sizeof(method));
     memset(path, 0, sizeof(path));
 
-    /*
-     * Read the request. This example just reads up to 1023 bytes once.
-     * A real server might need a loop to read the entire request or headers.
-     */
     bytes_read = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
     if (bytes_read <= 0)
     {
@@ -302,7 +234,6 @@ handle_client(int client_fd)
     /* This is a naive parse. Real parsing is more complicated. */
     sscanf(buffer, "%15s %255s", method, path);
 
-    /* We only handle GET in this toy example */
     if (strcmp(method, "GET") == 0)
     {
         if (strcmp(path, "/bufs") == 0)
@@ -324,7 +255,6 @@ handle_client(int client_fd)
                 return;
             }
 
-            // Construct the response safely
             written = snprintf(response, response_size,
                                 "HTTP/1.1 200 OK\r\n"
                                 "Content-Type: application/json\r\n"
@@ -374,11 +304,6 @@ handle_client(int client_fd)
     }
 }
 
-/*
- * For demonstration, returns a static JSON string. You could replace
- * this with calls to your actual data-export function (e.g. the
- * "PrintBufs()" or something that serializes real buffer info to JSON).
- */
 static char *
 export_buffers_as_json(void)
 {
@@ -468,30 +393,10 @@ export_buffers_as_json(void)
             // relname ? relname : "",
             forkNumber,
             blockNumber
-        );
-
-		// elog(LOG,
-		// 	 "[%02d] (freeNext=%d, rel=%s, "
-		// 	 "blockNum=%u, refcount=%u %d)",
-		// 	 i, buf->freeNext,
-		// 	 relpathbackend(BufTagGetRelFileLocator(&buf->tag),
-		// 					INVALID_PROC_NUMBER, BufTagGetForkNum(&buf->tag)),
-		// 	 buf->tag.blockNum, 
-		// 	 BUF_STATE_GET_REFCOUNT(buf_state), GetPrivateRefCount(b));
-        /* 
-         * If you want the actual page data, you'd do something like:
-         *    Buffer buf = BufferDescriptorGetBuffer(desc);
-         *    Page page = BufferGetPage(buf);
-         * But be mindful of concurrency and correctness.
-         */
-        
+        );        
     }
 
-    offset += sprintf(jsonBuffer + offset, "\n]\n");
-
-    // Use snprintf to safely write into the buffer
-    // snprintf(result, BUFF_SIZE, "{\"total buffer count\": \"%d\"}", NBuffers);
-    
+    offset += sprintf(jsonBuffer + offset, "\n]\n");    
 
     return  jsonBuffer;
 }
