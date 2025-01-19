@@ -2,7 +2,6 @@
 #include "fmgr.h"
 #include "utils/guc.h"
 
-/* For referencing Postgres buffer manager internals */
 #include "storage/bufmgr.h"
 #include "storage/buf_internals.h"  /* Where BufferDesc is defined in many PG versions. */
 
@@ -19,6 +18,8 @@
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
+
+#include "utils/lsyscache.h"
 
 PG_MODULE_MAGIC;
 
@@ -381,10 +382,9 @@ handle_client(int client_fd)
 static char *
 export_buffers_as_json(void)
 {
-
-
     char *jsonBuffer = malloc(BUFF_SIZE); 
     int i;
+    // char *relname;
 
     int offset = 0;
     offset += sprintf(jsonBuffer + offset, "[\n");
@@ -398,19 +398,6 @@ export_buffers_as_json(void)
 
         BufferDesc *desc = GetBufferDescriptor(i);
         BufferTag tag = desc->tag;
-
-        /*
-        
-        typedef struct buftag
-{
-	Oid			spcOid;			
-	Oid			dbOid;		
-	RelFileNumber relNumber;	
-	ForkNumber	forkNum;		
-	BlockNumber blockNum;	
-} BufferTag;
-
-        */
 
        int spcOid = tag.spcOid;
        int dbOid = tag.dbOid;
@@ -437,6 +424,9 @@ export_buffers_as_json(void)
             offset += sprintf(jsonBuffer + offset, ",\n");
         }
 
+        // This is segfaulting
+        // relname = get_rel_name(relNumber);
+
         offset += sprintf(jsonBuffer + offset,
             "  {\n"
             "    \"refcount\": %d,\n"
@@ -455,6 +445,7 @@ export_buffers_as_json(void)
             "         \"spcOid\": %d,\n"
             "         \"dbOid\": %d,\n"
             "         \"relNumber\": %d,\n"
+            // "         \"relName\": \"%s\",\n"
             "         \"forkNumber\": %d,\n"
             "         \"blockNumber\": %d\n"
             "    }\n"
@@ -474,6 +465,7 @@ export_buffers_as_json(void)
             spcOid,
             dbOid,
             relNumber,
+            // relname ? relname : "",
             forkNumber,
             blockNumber
         );
