@@ -103,6 +103,7 @@ _PG_fini(void)
 /* Forward declarations */
 static void handle_client(int client_fd);
 static char *export_buffers_as_json(void);
+static char *export_clog_as_json(void);
 
 static int BUFF_SIZE = 10000000;
 
@@ -277,6 +278,47 @@ handle_client(int client_fd)
             free(response);
             free(json);
         }
+        else if (strcmp(path, "/clog") == 0)
+        {
+            char *json = export_clog_as_json();
+            if (!json) {
+                fprintf(stderr, "Error: Failed to generate JSON\n");
+                return;
+            }
+
+            content_length = strlen(json);
+            
+            // Allocate response buffer dynamically based on content size
+            response_size = content_length + 200; // Extra space for headers
+            response = malloc(response_size);
+            if (!response) {
+                fprintf(stderr, "Error: Memory allocation failed\n");
+                free(json);
+                return;
+            }
+
+            written = snprintf(response, response_size,
+                                "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/json\r\n"
+                                "Access-Control-Allow-Origin: *\r\n"
+                                "Content-Length: %d\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "%s",
+                                content_length, json);
+            
+            if (written < 0 || written >= response_size) {
+                fprintf(stderr, "Error: Response formatting failed\n");
+                free(response);
+                free(json);
+                return;
+            }
+
+            send(client_fd, response, written, 0);
+
+            free(response);
+            free(json);
+        }
         else
         {
             /* 404 Not Found */
@@ -393,6 +435,43 @@ export_buffers_as_json(void)
             // relname ? relname : "",
             forkNumber,
             blockNumber
+        );        
+    }
+
+    offset += sprintf(jsonBuffer + offset, "\n]\n");    
+
+    return  jsonBuffer;
+}
+
+
+static char *
+export_clog_as_json(void)
+{
+    char *jsonBuffer = malloc(BUFF_SIZE); 
+    int i;
+    XLogRecPtr xidlsn;
+    XidStatus	xidstatus;
+    // char *relname;
+
+    int offset = 0;
+    offset += sprintf(jsonBuffer + offset, "[\n");
+
+    elog(LOG,
+    	 "Getting clog");
+
+    for (i = 0; i < 1000; i++)
+    {
+
+        xidstatus = TransactionIdGetStatus(i, &xidlsn);
+
+
+        offset += sprintf(jsonBuffer + offset,
+            "  {\n"
+            "    \"xid\": %d,\n"
+            "    \"status\": \"%d\",\n"
+            "  }",
+            i,
+            xidstatus
         );        
     }
 
