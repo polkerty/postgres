@@ -449,6 +449,8 @@ export_clog_as_json(void)
 {
     char *jsonBuffer = malloc(BUFF_SIZE); 
     int i;
+
+	TransactionId xid;
     XLogRecPtr xidlsn;
     XidStatus	xidstatus;
     // char *relname;
@@ -459,20 +461,27 @@ export_clog_as_json(void)
     elog(LOG,
     	 "Getting clog");
 
-    for (i = 0; i < 1000; i++)
-    {
-
+    for ( i = 0; i < ProcGlobal->allProcCount; i++ ) {
+        xid = ProcGlobal->xids[i];
         xidstatus = TransactionIdGetStatus(i, &xidlsn);
 
 
         offset += sprintf(jsonBuffer + offset,
             "  {\n"
             "    \"xid\": %d,\n"
+            "    \"backendId\": %d,\n"
+            "    \"processPID\": %d,\n"
             "    \"status\": \"%d\",\n"
+            "    \"xidlsn\": \"%llu\",\n"
             "  }",
+            xid,
             i,
-            xidstatus
+            ProcGlobal->allProcs[i].pid,
+            xidstatus,
+            xidlsn
         );        
+
+
     }
 
     offset += sprintf(jsonBuffer + offset, "\n]\n");    
