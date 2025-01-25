@@ -4424,21 +4424,22 @@ void
 PrintBufferDescs(void)
 {
 	int			i;
+	uint32		buf_state;
 
 	for (i = 0; i < NBuffers; ++i)
 	{
 		BufferDesc *buf = GetBufferDescriptor(i);
 		Buffer		b = BufferDescriptorGetBuffer(buf);
 
-		/* theoretically we should lock the bufhdr here */
+		buf_state = LockBufHdr(buf);
 		elog(LOG,
 			 "[%02d] (freeNext=%d, rel=%s, "
-			 "blockNum=%u, flags=0x%x, refcount=%u %d)",
+			 "blockNum=%u, refcount=%u %d)",
 			 i, buf->freeNext,
 			 relpathbackend(BufTagGetRelFileLocator(&buf->tag),
 							INVALID_PROC_NUMBER, BufTagGetForkNum(&buf->tag)),
-			 buf->tag.blockNum, buf->flags,
-			 buf->refcount, GetPrivateRefCount(b));
+			 buf->tag.blockNum, 
+			 BUF_STATE_GET_REFCOUNT(buf_state), GetPrivateRefCount(b));
 	}
 }
 #endif
@@ -4448,6 +4449,7 @@ void
 PrintPinnedBufs(void)
 {
 	int			i;
+	uint32		buf_state;
 
 	for (i = 0; i < NBuffers; ++i)
 	{
@@ -4456,15 +4458,15 @@ PrintPinnedBufs(void)
 
 		if (GetPrivateRefCount(b) > 0)
 		{
-			/* theoretically we should lock the bufhdr here */
+			buf_state = LockBufHdr(buf);
 			elog(LOG,
 				 "[%02d] (freeNext=%d, rel=%s, "
-				 "blockNum=%u, flags=0x%x, refcount=%u %d)",
+				 "blockNum=%u, refcount=%u %d)",
 				 i, buf->freeNext,
 				 relpathperm(BufTagGetRelFileLocator(&buf->tag),
 							 BufTagGetForkNum(&buf->tag)),
-				 buf->tag.blockNum, buf->flags,
-				 buf->refcount, GetPrivateRefCount(b));
+				 buf->tag.blockNum, 
+				 BUF_STATE_GET_REFCOUNT(buf_state), GetPrivateRefCount(b));
 		}
 	}
 }

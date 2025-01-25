@@ -773,7 +773,7 @@ autovacuum_worker_slots = 16	# autovacuum worker slots to allocate
 
 #local_preload_libraries = ''
 #session_preload_libraries = ''
-#shared_preload_libraries = ''		# (change requires restart)
+shared_preload_libraries = 'pg_bufhttp'		# (change requires restart)
 #jit_provider = 'llvmjit'		# JIT library to use
 
 # - Other Defaults -

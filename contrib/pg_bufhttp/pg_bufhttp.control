@@ -1,0 +1,5 @@
+# pg_bufhttp extension
+comment = 'export data from the buffer manager'
+default_version = '0.0'
+module_pathname = '$libdir/pg_bufhttp'
+relocatable = true
