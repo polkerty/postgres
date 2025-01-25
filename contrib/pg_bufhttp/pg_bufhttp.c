@@ -462,8 +462,10 @@ export_clog_as_json(void)
     	 "Getting clog");
 
     for ( i = 0; i < ProcGlobal->allProcCount; i++ ) {
+
+        if ( xid == 0 || !ProcGlobal->allProcs[i].pid) continue;
         xid = ProcGlobal->xids[i];
-        xidstatus = TransactionIdGetStatus(i, &xidlsn);
+        xidstatus = TransactionIdGetStatus(xid, &xidlsn);
 
 
         offset += sprintf(jsonBuffer + offset,
