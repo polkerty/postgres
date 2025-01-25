@@ -463,8 +463,8 @@ export_clog_as_json(void)
 
     for ( i = 0; i < ProcGlobal->allProcCount; i++ ) {
 
-        if ( xid == 0 || !ProcGlobal->allProcs[i].pid) continue;
         xid = ProcGlobal->xids[i];
+        if ( xid == 0 || !ProcGlobal->allProcs[i].pid) continue;
         xidstatus = TransactionIdGetStatus(xid, &xidlsn);
 
 
