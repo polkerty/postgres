@@ -30,6 +30,10 @@
 #include "portability/instr_time.h"
 #include "settings.h"
 
+#include <pthread.h>
+
+static bool query_is_running = true;
+
 static bool DescribeQuery(const char *query, double *elapsed_msec);
 static int	ExecQueryAndProcessResults(const char *query,
 									   double *elapsed_msec,
@@ -39,6 +43,7 @@ static int	ExecQueryAndProcessResults(const char *query,
 									   const printQueryOpt *opt,
 									   FILE *printQueryFout);
 static bool command_no_begin(const char *query);
+void *progress_updater(void *arg);
 
 
 /*
@@ -1088,6 +1093,8 @@ SendQuery(const char *query)
 	int			i;
 	bool		on_error_rollback_savepoint = false;
 	bool		svpt_gone = false;
+	pthread_t   progress_thread;
+
 
 	if (!pset.db)
 	{
@@ -1173,6 +1180,9 @@ SendQuery(const char *query)
 	else
 	{
 		/* Default fetch-and-print mode */
+		query_is_running = true;
+		pthread_create(&progress_thread, NULL, progress_updater, (void *)pset.db);
+
 		OK = (ExecQueryAndProcessResults(query, &elapsed_msec, &svpt_gone, false, 0, NULL, NULL) > 0);
 	}
 
@@ -1297,6 +1307,12 @@ sendquery_cleanup:
 		pg_free(pset.ctv_args[i]);
 		pset.ctv_args[i] = NULL;
 	}
+
+	query_is_running = false;  // Stop progress updater
+
+	// Wait for the progress thread to finish
+	pthread_join(progress_thread, NULL);
+
 
 	return OK;
 }
@@ -2317,4 +2333,22 @@ bool
 recognized_connection_string(const char *connstr)
 {
 	return uri_prefix_length(connstr) != 0 || strchr(connstr, '=') != NULL;
+}
+
+void *progress_updater(void *arg) {
+    // PGconn *conn = (PGconn *)arg;
+    // PGresult *res;
+
+    while (query_is_running) {  // Global or shared flag
+        // res = PQexec(conn, "SELECT pid, state, query, (now() - query_start) AS runtime FROM pg_stat_activity WHERE pid = pg_backend_pid();");
+        // if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+        //     printf("\rQuery running for %s seconds...\n", PQgetvalue(res, 0, 3));
+        //     fflush(stdout);
+        // }
+        // PQclear(res);
+		printf("Background query loop...\n");
+        sleep(1);  // Adjust polling interval
+    }
+
+    return NULL;
 }
