@@ -2608,6 +2608,19 @@ bind_param_error_callback(void *arg)
 }
 
 /*
+ * report_progress_message
+ *
+ * Generate a message describing the progress and state 
+ * of the current backend.
+ */
+static void 
+report_progress_message()
+{
+	printf("Triggered report_progress_message. PID: %d\n", MyProc->pid);
+
+}
+
+/*
  * exec_describe_statement_message
  *
  * Process a "Describe" message for a prepared statement
@@ -4874,6 +4887,10 @@ PostgresMain(const char *dbname, const char *username)
 
 					valgrind_report_error_query("DESCRIBE message");
 				}
+				break;
+			
+			case PgMsg_RequestProgress:
+				report_progress_message();
 				break;
 
 			case PqMsg_Flush:
