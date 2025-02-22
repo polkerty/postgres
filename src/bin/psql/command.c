@@ -126,6 +126,7 @@ static backslashResult exec_command_parse(PsqlScanState scan_state, bool active_
 static backslashResult exec_command_password(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_prompt(PsqlScanState scan_state, bool active_branch,
 										   const char *cmd);
+static backslashResult exec_command_progress(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_pset(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_quit(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_reset(PsqlScanState scan_state, bool active_branch,
@@ -407,6 +408,8 @@ exec_command(const char *cmd,
 		status = exec_command_parse(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "password") == 0)
 		status = exec_command_password(scan_state, active_branch);
+	else if (strcmp(cmd, "progress") == 0)
+		status = exec_command_progress(scan_state, active_branch);
 	else if (strcmp(cmd, "prompt") == 0)
 		status = exec_command_prompt(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "pset") == 0)
@@ -2902,6 +2905,28 @@ exec_command_t(PsqlScanState scan_state, bool active_branch)
 												 OT_NORMAL, NULL, true);
 
 		success = do_pset("tuples_only", opt, &pset.popt, pset.quiet);
+		free(opt);
+	}
+	else
+		ignore_slash_options(scan_state);
+
+	return success ? PSQL_CMD_SKIP_LINE : PSQL_CMD_ERROR;
+}
+
+/*
+ * \progress -- Track progress of active query
+ */
+static backslashResult
+exec_command_progress(PsqlScanState scan_state, bool active_branch)
+{
+	bool		success = true;
+
+	if (active_branch)
+	{
+		char	   *opt = psql_scan_slash_option(scan_state,
+												 OT_NORMAL, NULL, true);
+
+		success = do_pset("report_progress", opt, &pset.popt, pset.quiet);
 		free(opt);
 	}
 	else
